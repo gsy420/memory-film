@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>记忆胶片展示架</title>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; user-select: none; }
+  body { background: #FDF2E1; color: #3a2818; display: flex; align-items: center; justify-content: center; }
+
+  /* 竖屏画框（9:16 短视频画幅） */
+  .portrait-frame {
+    position: relative;
+    width: min(100vw, 56.25vh);
+    height: min(100vh, 177.78vw);
+    background: #FDF2E1;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(120,80,30,0.35);
+  }
+
+  /* 背景装饰星星 */
+  .bg-stars { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; display: block !important; }
+  .bg-star { position: absolute; }
+  .bg-star svg { display: block; }
+
+  /* ===== 场景0：启动页 ===== */
+  #scene-splash { display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  #scene-splash:not(.active) { display: none; }
+  .splash-title { font-family: "STKaiti", "KaiTi", "楷体", serif; font-size: 46px; font-weight: bold; color: #3a2818; letter-spacing: 6px; text-shadow: 0 2px 8px rgba(120,80,30,0.3); margin-bottom: 10px; text-align: center; }
+  .splash-subtitle { font-size: 14px; color: #9a8060; letter-spacing: 8px; margin-bottom: 40px; }
+  .splash-hint { font-size: 14px; color: #b09060; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+  /* 场景系统 */
+  .scene { position: absolute; inset: 0; display: none; opacity: 0; transition: opacity 0.6s ease; z-index: 1; background: transparent !important; }
+  .scene.active { display: block; opacity: 1; }
+
+  /* ===== 场景1：形象选择 ===== */
+  #scene-select {
+    background: transparent;
+    display: none; align-items: center; justify-content: center; flex-direction: column; padding: 0 20px;
+  }
+  #scene-select.active { display: flex; }
+  .select-title { font-size: 22px; margin-bottom: 28px; letter-spacing: 3px; text-shadow: 0 2px 8px rgba(120,80,30,0.3); text-align: center; color: #3a2818; }
+  .char-options { display: flex; flex-direction: column; gap: 18px; margin-bottom: 24px; width: 100%; max-width: 280px; }
+  .char-card {
+    width: 100%; height: 120px; border-radius: 16px; background: rgba(255,255,255,0.4);
+    border: 2px solid rgba(255,255,255,0.6); display: flex; flex-direction: row;
+    align-items: center; justify-content: flex-start; cursor: pointer; transition: all 0.3s;
+    backdrop-filter: blur(8px); padding: 0 20px; gap: 18px;
+  }
+  .char-card:hover { transform: translateY(-4px); border-color: #75AADC; background: rgba(255,255,255,0.55); box-shadow: 0 8px 24px rgba(120,80,30,0.25); }
+  .char-card.selected { border-color: #75AADC; background: rgba(255,255,255,0.6); }
+  .char-card svg { width: 70px; height: 70px; flex-shrink: 0; }
+  .char-card p { font-size: 17px; letter-spacing: 2px; color: #3a2818; }
+  .name-section { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; max-width: 280px; }
+  .name-section input {
+    width: 100%; height: 42px; padding: 0 16px; border-radius: 21px; border: 2px solid rgba(120,80,30,0.3);
+    background: rgba(255,255,255,0.5); color: #3a2818; font-size: 14px; outline: none; text-align: center;
+  }
+  .name-section input:focus { border-color: #75AADC; }
+  .name-section button {
+    height: 42px; padding: 0 24px; border-radius: 21px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #ffd86b, #f0a44b); color: #2a1f0c; font-size: 14px; font-weight: bold; letter-spacing: 2px;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .name-section button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,216,107,0.4); }
+  .name-section button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ===== 场景2：主舞台 ===== */
+  #scene-stage {
+    background: transparent;
+  }
+  .stage-world {
+    position: absolute; inset: 0;
+    transform: scale(1);
+    transform-origin: center center;
+    transition: transform 1.4s cubic-bezier(0.45, 0, 0.25, 1);
+  }
+  /* 背景始终为杏色 */
+  .bg-wall, .bg-lamp { display: none; }
+  .floor {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 8%;
+    background: linear-gradient(180deg, rgba(120,80,30,0.4), rgba(80,55,30,0.8));
+    border-top: 2px solid #6a4a2a;
+  }
+
+  /* 唱片机：放在右下角的小桌台上 */
+  .record-player {
+    position: absolute; right: 2%; bottom: 5%; width: 37%; aspect-ratio: 220/200; cursor: pointer;
+    transition: filter 0.4s, transform 0.4s; z-index: 4;
+  }
+  .record-player:hover { filter: drop-shadow(0 0 16px rgba(255,216,107,0.6)); }
+  .record-player svg { width: 100%; height: 100%; display: block; }
+  .turntable-disc { transform-origin: 110px 130px; }
+  .turntable-disc.spinning { animation: spin 3s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* 展示架：占据上半部分大部分画面 */
+  .shelf {
+    position: absolute; left: 4%; right: 4%; top: 3%; width: 92%; z-index: 2;
+  }
+  .shelf-boards {
+    display: flex; flex-direction: column; gap: 3%;
+  }
+  .shelf-row {
+    position: relative; width: 100%;
+    background: linear-gradient(180deg, #8a6a4a 0%, #5a4028 60%, #4a321e 100%);
+    border-radius: 6px;
+    box-shadow: 0 5px 0 #3a2818, 0 8px 14px rgba(0,0,0,0.5), inset 0 2px 0 #8a6a4a;
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; justify-content: center;
+    height: 22vh; min-height: 100px; max-height: 200px;
+    padding: 4px 4px 6px;
+  }
+  .shelf-row::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 7px;
+    background: linear-gradient(180deg, #3a2818, #2a1d10); border-radius: 0 0 6px 6px;
+  }
+
+  /* 胶片（圆盘形） */
+  .film {
+    width: 26%; max-width: 110px; min-width: 55px;
+    cursor: pointer; position: relative;
+    transition: transform 0.3s, opacity 0.4s;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .film:hover { transform: translateY(-6px); z-index: 3; }
+  .film.taken { opacity: 0; pointer-events: none; }
+  /* 胶片圆盘：黑底圆 + 中间红圆 */
+  .film-cover {
+    width: 100%; aspect-ratio: 1/1; border-radius: 50%; position: relative; overflow: hidden;
+    background: #000; border: 3px solid #2a1f0c;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* 中间红圆（默认图案） */
+  .film-red-circle {
+    width: 66%; aspect-ratio: 1/1; border-radius: 50%;
+    background: #c54a4a;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    box-shadow: inset 0 0 8px rgba(0,0,0,0.35);
+  }
+  /* 用户提供图片后，红圆位置变为圆形图片 */
+  .film-red-circle img {
+    width: 100%; height: 100%; object-fit: cover; display: none;
+    border-radius: 50%;
+  }
+  .film.has-cover .film-red-circle { background: #000; box-shadow: none; }
+  .film.has-cover .film-red-circle img { display: block; }
+  /* 默认 + 号提示 */
+  .film-plus {
+    color: rgba(255,255,255,0.95); font-size: 20px; font-weight: bold;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6); line-height: 1;
+  }
+  .film.has-cover .film-plus { display: none; }
+  /* "添加图片" 文字提示 */
+  .film-hint {
+    font-size: 8px; color: rgba(255,216,107,0.85); letter-spacing: 1px;
+    text-align: center;
+  }
+  .film.has-cover .film-hint { display: none; }
+  /* 胶片名称（圆盘下方，展示架横线处） */
+  .film-label {
+    margin-top: 5px; font-size: 9px; line-height: 1.2; text-align: center;
+    color: #ffe8c0; background: rgba(0,0,0,0.3); border-radius: 3px;
+    width: 100%; padding: 2px 4px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .film-label:hover { background: rgba(0,0,0,0.5); }
+  .film-label[contenteditable="true"] {
+    background: #fff; color: #2a1f0c; outline: 2px solid #ffd86b; cursor: text;
+    white-space: normal; overflow: visible;
+  }
+
+  /* 人物（背影） */
+  .character {
+    position: absolute; left: 50%; bottom: 5%; transform: translateX(-50%);
+    width: 26%; max-width: 120px; aspect-ratio: 130/220; cursor: pointer;
+    transition: left 1.6s cubic-bezier(0.45, 0, 0.25, 1), bottom 1.6s, opacity 0.4s;
+    z-index: 5;
+  }
+  .character.walking .char-body { animation: walkBob 0.5s infinite; }
+  @keyframes walkBob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+  }
+  .character svg { width: 100%; height: 100%; display: block; }
+  /* 独立 HTML 手臂元素（不受 SVG viewBox 限制） */
+  .char-extended-arm {
+    position: absolute;
+    width: 12px;
+    height: var(--arm-length, 48px);
+    left: var(--shoulder-x, 86px);
+    top: var(--shoulder-y, 92px);
+    transform: rotate(var(--arm-angle, 0deg));
+    transform-origin: top center;
+    transition: height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1),
+                transform 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .char-extended-arm .arm-shaft {
+    width: 100%; height: 100%;
+    background: var(--arm-color, #9c3a6a);
+    border-radius: 6px;
+    box-shadow: inset 0 -2px 4px rgba(0,0,0,0.2);
+  }
+  .char-extended-arm .arm-hand {
+    position: absolute;
+    left: 50%; top: 100%;
+    transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--hand-color, #fafafa);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .character.holding .film-in-hand { display: block; }
+  .character.reaching { z-index: 15 !important; }
+  /* 手中胶片：默认在胸前位置，跟随手移动 */
+  .film-in-hand {
+    display: none; position: absolute; right: 18%; top: 30%; width: 22%; aspect-ratio: 1/1;
+    border: 3px solid #2a1f0c; border-radius: 50%; overflow: hidden;
+    background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    transition: top 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), right 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+  }
+  .film-in-hand img { width: 66%; height: 66%; object-fit: cover; border-radius: 50%; position: absolute; left: 17%; top: 17%; }
+
+  /* 对话气泡 */
+  .speech-bubble {
+    position: absolute; left: 50%; bottom: 32%; transform: translateX(-50%) translateY(20px);
+    background: rgba(255,255,255,0.96); color: #2a1f0c; padding: 12px 18px; border-radius: 14px;
+    font-size: 14px; line-height: 1.5; opacity: 0; pointer-events: none; transition: all 0.5s;
+    max-width: 80%; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    z-index: 10;
+  }
+  .speech-bubble.show { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+  .speech-bubble::after {
+    content: ""; position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
+    border: 8px solid transparent; border-top-color: rgba(255,255,255,0.96); border-bottom: 0;
+  }
+  .custom-text {
+    display: inline-block; padding: 0 6px; min-width: 80px; cursor: text;
+    border-bottom: 2px dashed #f0a44b; color: #75AADC; font-weight: bold;
+    outline: none;
+  }
+  .custom-text:focus { background: #fff3d6; border-radius: 3px; }
+
+  /* 底部提示 */
+  .prompt {
+    position: absolute; left: 50%; bottom: 1.5%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); color: #ffd86b; padding: 8px 18px; border-radius: 18px; text-align: center;
+    font-size: 12px; letter-spacing: 1px; opacity: 0; transition: opacity 0.5s;
+    border: 1px solid rgba(255,216,107,0.4); z-index: 11; backdrop-filter: blur(6px);
+    white-space: nowrap; text-align: center;
+  }
+  .prompt.show { opacity: 1; animation: pulseGlow 2s infinite; }
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 10px rgba(255,216,107,0.3); }
+    50% { box-shadow: 0 0 20px rgba(255,216,107,0.6); }
+  }
+
+  /* 音符 */
+  .notes-container { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+  .music-note {
+    position: absolute; font-size: 22px; color: #ffd86b;
+    text-shadow: 0 0 8px rgba(255,216,107,0.8);
+    animation: noteFloat 2.4s ease-out forwards;
+    opacity: 0;
+  }
+  @keyframes noteFloat {
+    0% { opacity: 0; transform: translateY(0) scale(0.5); }
+    20% { opacity: 1; transform: translateY(-20px) scale(1); }
+    100% { opacity: 0; transform: translateY(-100px) scale(1.2) rotate(20deg); }
+  }
+
+  /* 编辑按钮 */
+  .edit-btn {
+    position: absolute; top: 12px; right: 12px; z-index: 20;
+    background: rgba(120,80,30,0.4); color: #3a2818; border: 1px solid rgba(120,80,30,0.5);
+    padding: 6px 12px; border-radius: 14px; cursor: pointer; font-size: 11px;
+    backdrop-filter: blur(6px); transition: all 0.3s;
+  }
+  .edit-btn:hover { background: rgba(117,170,220,0.3); border-color: #75AADC; }
+
+  /* ===== 场景3：图集 ===== */
+  #scene-gallery {
+    background: transparent;
+    display: none; align-items: center; justify-content: center;
+  }
+  #scene-gallery.active { display: flex; }
+  .back-btn {
+    position: absolute; top: 8px; left: 8px; z-index: 10;
+    background: rgba(42,31,12,0.75); color: #fff; border: 1px solid rgba(255,255,255,0.35);
+    padding: 6px 10px; border-radius: 14px; cursor: pointer; font-size: 11px;
+    transition: all 0.3s;
+  }
+  .back-btn:hover { background: rgba(117,170,220,0.8); border-color: #ffd86b; }
+  .gallery-viewer {
+    width: 92%; max-height: 92%; position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .gallery-image-wrap {
+    position: relative; width: 100%; max-height: 78%;
+    border: 6px solid #2a1f0c; border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.7), 0 0 0 2px #ffd86b inset;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gallery-image-wrap::before, .gallery-image-wrap::after {
+    content: ""; position: absolute; left: 0; right: 0; height: 14px;
+    background: repeating-linear-gradient(90deg, #1a1530 0 6px, transparent 6px 12px);
+    z-index: 5;
+  }
+  .gallery-image-wrap::before { top: 0; }
+  .gallery-image-wrap::after { bottom: 0; }
+  #gallery-image { display: block; max-width: 100%; max-height: 78vh; object-fit: contain; }
+  .gallery-info {
+    display: flex; gap: 16px; align-items: center; color: #3a2818; font-size: 12px; letter-spacing: 2px;
+  }
+  .nav-btn {
+    position: absolute; top: 50%; transform: translateY(-50%); z-index: 15;
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255,216,107,0.5);
+    background: rgba(0,0,0,0.55); color: #ffd86b; font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all 0.3s;
+  }
+  .nav-btn:hover { background: rgba(255,216,107,0.25); }
+  .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .nav-prev { left: 8px; }
+  .nav-next { right: 8px; }
+
+  /* ===== 编辑弹窗 ===== */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100;
+    display: none; align-items: center; justify-content: center;
+    backdrop-filter: blur(6px);
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-content {
+    width: 90%; max-width: 720px; max-height: 86vh; overflow-y: auto;
+    background: #FFF8EA;
+    border: 2px solid #c9a864; border-radius: 18px;
+    padding: 24px 28px; color: #3a2818;
+  }
+  .modal-content h2 { font-size: 20px; margin-bottom: 18px; color: #7a5028; letter-spacing: 2px; text-align: center; }
+  .modal-section { margin-bottom: 16px; }
+  .modal-section label { display: block; margin-bottom: 6px; font-size: 13px; color: #7a5028; }
+  .modal-section input[type="text"], .modal-section input[type="url"] {
+    width: 100%; height: 36px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid #c9a864; background: #fff;
+    color: #3a2818; font-size: 14px; outline: none;
+  }
+  .modal-section input:focus { border-color: #75AADC; }
+  .film-edit-row {
+    background: rgba(255,255,255,0.7); border: 1px solid #c9a864;
+    border-radius: 10px; padding: 12px; margin-bottom: 12px;
+  }
+  .film-edit-row .row-head {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .film-edit-row .row-title { font-size: 13px; color: #7a5028; font-weight: bold; }
+  .film-edit-row .remove-btn {
+    background: rgba(117,170,220,0.15); border: 1px solid rgba(117,170,220,0.4); color: #75AADC;
+    padding: 4px 10px; border-radius: 14px; cursor: pointer; font-size: 12px;
+  }
+  .film-edit-row .remove-btn:hover { background: rgba(117,170,220,0.3); }
+  .film-edit-row .field { margin-bottom: 6px; }
+  .film-edit-row .field label { display: block; font-size: 12px; color: #7a5028; margin-bottom: 4px; }
+  .film-edit-row .field input { width: 100%; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid #c9a864; background: #fff; color: #3a2818; font-size: 13px; outline: none; }
+  .film-edit-row .field input:focus { border-color: #75AADC; }
+  .film-edit-row .thumb-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px;
+  }
+  .film-edit-row .thumb-grid .thumb {
+    position: relative; aspect-ratio: 1/1; border-radius: 6px; overflow: hidden;
+    border: 1px solid #c9a864; background: #fff;
+  }
+  .film-edit-row .thumb-grid .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .film-edit-row .thumb-grid .thumb .del {
+    position: absolute; top: 2px; right: 2px; width: 20px; height: 20px;
+    background: rgba(117,170,220,0.8); color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer;
+    border: none; line-height: 1;
+  }
+  .film-edit-row .btn-pick {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: linear-gradient(135deg, #ffd86b, #f0a44b); color: #2a1f0c;
+    border: none; padding: 8px 16px; border-radius: 18px; cursor: pointer;
+    font-size: 13px; font-weight: bold; margin-top: 8px;
+  }
+  .film-edit-row .btn-pick:disabled { opacity: 0.4; cursor: not-allowed; }
+  .film-edit-row .img-count { font-size: 11px; color: #7a5028; margin-left: 10px; }
+  .film-edit-row .cover-pick-area {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 4px;
+  }
+  .film-edit-row .current-cover {
+    position: relative; width: 50px; height: 50px; border-radius: 6px; overflow: hidden;
+    border: 1px solid #c9a864;
+  }
+  .film-edit-row .current-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .film-edit-row .current-cover .remove-cover {
+    position: absolute; top: 1px; right: 1px; width: 18px; height: 18px;
+    background: rgba(117,170,220,0.8); color: #fff; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; cursor: pointer;
+    border: none; line-height: 1; padding: 0;
+  }
+  .modal-actions { display: flex; gap: 12px; margin-top: 16px; justify-content: flex-end; }
+  .modal-actions button {
+    padding: 10px 24px; border-radius: 22px; border: none; cursor: pointer; font-size: 14px; letter-spacing: 2px;
+  }
+  .btn-add { background: rgba(255,216,107,0.25); border: 1px solid #c9a864; color: #7a5028; }
+  .btn-save { background: linear-gradient(135deg, #ffd86b, #f0a44b); color: #2a1f0c; }
+  .btn-cancel { background: rgba(120,80,30,0.15); border: 1px solid #c9a864; color: #7a5028; }
+  /* 图集内添加照片按钮 */
+  .gallery-add-btn {
+    position: absolute; bottom: -12px; left: 50%; transform: translateX(-50%); z-index: 20;
+    background: linear-gradient(135deg, #ffd86b, #f0a44b); color: #2a1f0c;
+    border: none; padding: 8px 18px; border-radius: 20px; cursor: pointer;
+    font-size: 13px; font-weight: bold; letter-spacing: 1px; display: none;
+    white-space: nowrap;
+  }
+  .gallery-add-btn.show { display: block; }
+
+  /* 提示 toast */
+  .toast {
+    position: fixed; top: 30px; left: 50%; transform: translateX(-50%) translateY(-80px);
+    background: rgba(0,0,0,0.85); color: #ffd86b; padding: 12px 26px; border-radius: 24px;
+    border: 1px solid rgba(255,216,107,0.5); font-size: 14px; letter-spacing: 1px;
+    z-index: 200; transition: transform 0.4s; backdrop-filter: blur(6px);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div class="portrait-frame">
+
+<!-- 背景装饰星星 -->
+<div class="bg-stars" id="bg-stars"></div>
+<!-- ===== 场景0：启动页 ===== -->
+<div id="scene-splash" class="scene active">
+  <div class="splash-title">记忆胶片<br>展示架</div>
+  <div class="splash-subtitle">MEMORY&nbsp;&nbsp;REEL</div>
+  <div class="splash-hint">点击屏幕进入</div>
+</div>
+
+<!-- ===== 场景1：形象选择 ===== -->
+<div id="scene-select" class="scene">
+  <div class="select-title">请选择更符合您图集主题的专属小猫</div>
+  <div class="char-options">
+    <div class="char-card" data-gender="love_life" tabindex="0">
+      <svg viewBox="0 0 100 100">
+        <!-- 耳朵：暹罗重点色（深棕） -->
+        <path d="M25 32 L20 12 L37 24 Z" fill="#4a3525"/>
+        <path d="M75 32 L80 12 L63 24 Z" fill="#4a3525"/>
+        <path d="M27 30 L24 16 L33 23 Z" fill="#d98099"/>
+        <path d="M73 30 L76 16 L67 23 Z" fill="#d98099"/>
+        <!-- 头：奶油色 -->
+        <circle cx="50" cy="45" r="25" fill="#f5e6d0"/>
+        <!-- 面罩（暹罗特征：脸部较深） -->
+        <ellipse cx="50" cy="52" rx="14" ry="11" fill="#d4b890"/>
+        <!-- 蓝眼睛（暹罗标志） -->
+        <ellipse cx="40" cy="45" rx="3.5" ry="4" fill="#6db5d9"/>
+        <ellipse cx="60" cy="45" rx="3.5" ry="4" fill="#6db5d9"/>
+        <circle cx="40" cy="45" r="2" fill="#1a1530"/>
+        <circle cx="60" cy="45" r="2" fill="#1a1530"/>
+        <circle cx="41" cy="44" r="0.8" fill="#fff"/>
+        <circle cx="61" cy="44" r="0.8" fill="#fff"/>
+        <!-- 鼻子 -->
+        <path d="M48 53 L52 53 L50 56 Z" fill="#d98099"/>
+        <!-- 嘴 -->
+        <path d="M50 56 Q45 61 42 59 M50 56 Q55 61 58 59" stroke="#4a3525" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <!-- 须 -->
+        <line x1="22" y1="49" x2="32" y2="51" stroke="#4a3525" stroke-width="0.8"/>
+        <line x1="22" y1="53" x2="32" y2="53" stroke="#4a3525" stroke-width="0.8"/>
+        <line x1="68" y1="51" x2="78" y2="49" stroke="#4a3525" stroke-width="0.8"/>
+        <line x1="68" y1="53" x2="78" y2="53" stroke="#4a3525" stroke-width="0.8"/>
+        <!-- 日常短袖T恤领口 -->
+        <path d="M30 76 Q30 70 50 70 Q70 70 70 76 L72 92 L28 92 Z" fill="#7ac4a8"/>
+        <path d="M44 70 Q50 78 56 70 L56 74 Q50 80 44 74 Z" fill="#5fa888"/>
+        <!-- 前爪：深棕重点色 -->
+        <ellipse cx="38" cy="92" rx="5" ry="3" fill="#4a3525"/>
+        <ellipse cx="62" cy="92" rx="5" ry="3" fill="#4a3525"/>
+      </svg>
+      <p>热爱生活</p>
+    </div>
+    <div class="char-card" data-gender="for_love" tabindex="0">
+      <svg viewBox="0 0 100 100">
+        <!-- 完整皇冠（贴合头部） -->
+        <defs>
+          <linearGradient id="crownGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#f0d050"/>
+            <stop offset="100%" stop-color="#c9a818"/>
+          </linearGradient>
+        </defs>
+        <!-- 皇冠底带 -->
+        <rect x="28" y="22" width="44" height="5" rx="2" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <!-- 皇冠尖峰（5个，贴合头部宽度） -->
+        <polygon points="28,22 32,13 36,22" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <polygon points="36,22 42,11 48,22" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <polygon points="48,22 50,7 52,22" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <polygon points="52,22 58,11 64,22" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <polygon points="64,22 68,13 72,22" fill="url(#crownGrad)" stroke="#a88a10" stroke-width="0.5"/>
+        <!-- 尖端宝石 -->
+        <circle cx="32" cy="13" r="1.3" fill="#75AADC"/>
+        <circle cx="42" cy="11" r="1.3" fill="#ff6b8a"/>
+        <circle cx="50" cy="7" r="1.8" fill="#75AADC"/>
+        <circle cx="58" cy="11" r="1.3" fill="#ff6b8a"/>
+        <circle cx="68" cy="13" r="1.3" fill="#75AADC"/>
+        <!-- 底带装饰珍珠 -->
+        <circle cx="36" cy="24.5" r="1" fill="#fff" opacity="0.9"/>
+        <circle cx="44" cy="24.5" r="1" fill="#fff" opacity="0.9"/>
+        <circle cx="50" cy="24.5" r="1.3" fill="#ff6b8a"/>
+        <circle cx="56" cy="24.5" r="1" fill="#fff" opacity="0.9"/>
+        <circle cx="64" cy="24.5" r="1" fill="#fff" opacity="0.9"/>
+        <!-- 耳朵：左黑右橙（三花特征） -->
+        <path d="M30 32 L28 22 L40 28 Z" fill="#2a2a2a"/>
+        <path d="M70 32 L72 22 L60 28 Z" fill="#e89a4a"/>
+        <!-- 头：白色底 -->
+        <circle cx="50" cy="45" r="25" fill="#fafafa"/>
+        <!-- 三花纹：黑色和橙色斑块 -->
+        <path d="M38 32 Q33 28 36 40 Q42 38 43 33 Z" fill="#2a2a2a"/>
+        <path d="M68 36 Q74 30 72 42 Q64 40 64 36 Z" fill="#e89a4a"/>
+        <path d="M50 28 Q56 26 58 32 Q52 33 48 30 Z" fill="#2a2a2a" opacity="0.8"/>
+        <!-- 眼睛 + 睫毛 -->
+        <circle cx="40" cy="44" r="3" fill="#1a1530"/>
+        <circle cx="60" cy="44" r="3" fill="#1a1530"/>
+        <circle cx="41" cy="43" r="1" fill="#fff"/>
+        <circle cx="61" cy="43" r="1" fill="#fff"/>
+        <line x1="37" y1="40" x2="35" y2="38" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="40" y1="39" x2="40" y2="37" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="63" y1="40" x2="65" y2="38" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="60" y1="39" x2="60" y2="37" stroke="#1a1530" stroke-width="0.8"/>
+        <!-- 鼻子 -->
+        <path d="M48 52 L52 52 L50 55 Z" fill="#d98099"/>
+        <!-- 嘴 -->
+        <path d="M50 55 Q45 60 42 58 M50 55 Q55 60 58 58" stroke="#c54a8a" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+        <!-- 须 -->
+        <line x1="22" y1="48" x2="32" y2="50" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="22" y1="52" x2="32" y2="52" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="68" y1="50" x2="78" y2="48" stroke="#1a1530" stroke-width="0.8"/>
+        <line x1="68" y1="52" x2="78" y2="52" stroke="#1a1530" stroke-width="0.8"/>
+        <!-- 腮红 -->
+        <circle cx="33" cy="56" r="3" fill="#ff9bb5" opacity="0.6"/>
+        <circle cx="67" cy="56" r="3" fill="#ff9bb5" opacity="0.6"/>
+        <!-- 精致礼裙 -->
+        <path d="M24 76 Q24 70 50 70 Q76 70 76 76 L82 92 L18 92 Z" fill="#2a4a8a"/>
+        <!-- 蕾丝花边裙摆 -->
+        <path d="M18 92 L20 87 L22 92 L24 87 L26 92 L28 87 L30 92 L32 87 L34 92 L36 87 L38 92 L40 87 L42 92 L44 87 L46 92 L48 87 L50 92 L52 87 L54 92 L56 87 L58 92 L60 87 L62 92 L64 87 L66 92 L68 87 L70 92 L72 87 L74 92 L76 87 L78 92 L80 87 L82 92 Z" fill="#d6e6f6"/>
+        <!-- 珍珠装饰 -->
+        <circle cx="42" cy="80" r="1.3" fill="#ffd86b"/>
+        <circle cx="50" cy="78" r="1.3" fill="#ffd86b"/>
+        <circle cx="58" cy="80" r="1.3" fill="#ffd86b"/>
+        <!-- 腰带 -->
+        <rect x="26" y="83" width="48" height="3" fill="#1a3a6a"/>
+      </svg>
+      <p>为爱奔赴</p>
+    </div>
+  </div>
+  <div class="name-section">
+    <input type="text" id="char-name-input" placeholder="为TA取个名字（可选）" maxlength="8">
+    <button id="confirm-char" disabled>确认选择</button>
+  </div>
+</div>
+
+<!-- ===== 场景2：主舞台 ===== -->
+<div id="scene-stage" class="scene">
+  <div class="bg-wall"></div>
+  <div class="bg-lamp"></div>
+  <div class="bg-stars"></div>
+  <div class="floor"></div>
+
+  <div class="stage-world" id="stage-world">
+    <!-- 唱片机 -->
+    <div class="record-player" id="record-player">
+      <svg viewBox="0 0 220 200">
+        <!-- 底座 -->
+        <rect x="20" y="120" width="180" height="60" rx="6" fill="#6b4a2a"/>
+        <rect x="20" y="120" width="180" height="14" fill="#8b6a3a"/>
+        <!-- 唱臂支柱 -->
+        <rect x="180" y="80" width="14" height="50" fill="#3a2818"/>
+        <circle cx="187" cy="80" r="8" fill="#5a3a22"/>
+        <!-- 唱臂 -->
+        <g class="tone-arm">
+          <rect x="100" y="84" width="84" height="6" rx="3" fill="#888" transform-origin="184 87"/>
+          <circle cx="104" cy="87" r="6" fill="#444"/>
+        </g>
+        <!-- 唱片 -->
+        <g class="turntable-disc" id="turntable-disc">
+          <circle cx="110" cy="130" r="50" fill="#1a1a1a"/>
+          <circle cx="110" cy="130" r="48" fill="none" stroke="#333" stroke-width="1"/>
+          <circle cx="110" cy="130" r="42" fill="none" stroke="#333" stroke-width="1"/>
+          <circle cx="110" cy="130" r="36" fill="none" stroke="#333" stroke-width="1"/>
+          <circle cx="110" cy="130" r="30" fill="none" stroke="#333" stroke-width="1"/>
+          <circle cx="110" cy="130" r="24" fill="none" stroke="#333" stroke-width="1"/>
+          <circle cx="110" cy="130" r="8" fill="#75AADC"/>
+          <circle cx="110" cy="130" r="2" fill="#1a1a1a"/>
+        </g>
+        <!-- 唱片上的胶片占位 -->
+        <g id="player-film" style="display:none">
+          <rect x="92" y="112" width="36" height="36" fill="#000" stroke="#ffd86b" stroke-width="1"/>
+        </g>
+      </svg>
+    </div>
+
+    <!-- 展示架 -->
+    <div class="shelf" id="shelf">
+      <div class="shelf-boards" id="shelf-boards"></div>
+    </div>
+
+    <!-- 人物 -->
+    <div class="character" id="character" style="display:none">
+      <svg viewBox="0 0 130 220" id="char-svg"></svg>
+      <!-- 独立 HTML 手臂（不受 SVG 裁剪） -->
+      <div class="char-extended-arm" id="extended-arm">
+        <div class="arm-shaft"></div>
+        <div class="arm-hand"></div>
+      </div>
+      <div class="film-in-hand" id="film-in-hand">
+        <img id="film-in-hand-img" src="" alt="">
+      </div>
+    </div>
+
+    <!-- 对话气泡 -->
+    <div class="speech-bubble" id="speech-bubble">
+      <span id="bubble-text">欢迎来到我的</span>&nbsp;<span class="custom-text" id="custom-text" contenteditable="false">记忆小屋</span>
+    </div>
+
+    <!-- 底部提示 -->
+    <div class="prompt" id="prompt">请点击任意记忆胶片</div>
+
+    <!-- 音符容器 -->
+    <div class="notes-container" id="notes-container"></div>
+
+    <!-- 编辑按钮 -->
+    <button class="edit-btn" id="edit-btn" style="display:none">编辑信息</button>
+  </div>
+</div>
+
+<!-- ===== 场景3：图集 ===== -->
+<div id="scene-gallery" class="scene">
+  <div class="gallery-viewer">
+    <button class="back-btn" id="back-btn">← 返回</button>
+    <div class="gallery-image-wrap">
+      <img id="gallery-image" src="" alt="记忆胶片">
+      <button class="nav-btn nav-prev" id="nav-prev">‹</button>
+      <button class="nav-btn nav-next" id="nav-next">›</button>
+    </div>
+    <div class="gallery-info">
+      <span id="gallery-name"></span>
+      <span id="gallery-counter"></span>
+    </div>
+    <button class="gallery-add-btn" id="gallery-add-btn">+ 添加照片</button>
+  </div>
+</div>
+
+<!-- 隐藏的文件选择器，用于手机端相册 -->
+<input type="file" id="file-picker" accept="image/*" multiple style="display:none">
+<input type="file" id="file-picker-gallery" accept="image/*" multiple style="display:none">
+
+</div><!-- /.portrait-frame -->
+
+<!-- ===== 编辑弹窗 ===== -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-content">
+    <h2>编辑记忆信息</h2>
+    <div class="modal-section">
+      <label>主人的名字（显示在对话中）</label>
+      <input type="text" id="edit-name" maxlength="8" placeholder="如：小明">
+    </div>
+    <div class="modal-section">
+      <label>"欢迎来到我的_____" 中的空白处</label>
+      <input type="text" id="edit-custom-text" maxlength="10" placeholder="如：记忆小屋">
+    </div>
+    <div class="modal-section">
+      <label>胶片列表（点击胶片直接从手机相册选择照片，最多 9 个胶片）</label>
+      <div id="films-edit-list"></div>
+      <button class="btn-add" id="add-film-btn">+ 添加胶片</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancel-edit">取消</button>
+      <button class="btn-save" id="save-edit">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+
+<script src="./app.js"></script>
+</body>
+</html>
